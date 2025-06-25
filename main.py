@@ -248,13 +248,16 @@ def main():
     clock = pygame.time.Clock()
     level = 1
     running = True
+    player = None  # Ensure player is defined before the main loop
     while running:
         width = MAZE_WIDTH
         height = MAZE_HEIGHT
         maze = generate_maze(width, height)
-        # Place player at a random empty cell
         player_x, player_y = random_empty_cell(maze)
-        player = Player(player_x, player_y, ammo=player.ammo if 'player' in locals() else 1)
+        if player is not None:
+            player = Player(player_x, player_y, ammo=player.ammo)
+        else:
+            player = Player(player_x, player_y)
         # Place initial enemies
         enemies = []
         for _ in range(5):
