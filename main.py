@@ -4,7 +4,7 @@ import sys
 import collections
 
 # Game settings
-CELL_SIZE = 32
+CELL_SIZE = 48
 MAZE_WIDTH = 15
 MAZE_HEIGHT = 15
 SCREEN_WIDTH = CELL_SIZE * MAZE_WIDTH
@@ -18,6 +18,16 @@ FPS = 60
 
 # Directions
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # N, E, S, W
+
+# Load enemy sprite
+ENEMY_SPRITE = pygame.image.load('sprites/cacodemon.png')
+ENEMY_SPRITE = pygame.transform.scale(ENEMY_SPRITE, (CELL_SIZE, CELL_SIZE))
+
+# Load player sprite
+PLAYER_SPRITE_1 = pygame.image.load('sprites/player.png')
+PLAYER_SPRITE_1 = pygame.transform.scale(PLAYER_SPRITE_1, (CELL_SIZE, CELL_SIZE))
+PLAYER_SPRITE_2 = pygame.image.load('sprites/player2.png')
+PLAYER_SPRITE_2 = pygame.transform.scale(PLAYER_SPRITE_2, (CELL_SIZE, CELL_SIZE))
 
 # Maze generation (recursive backtracker)
 def generate_maze(width, height):
@@ -105,8 +115,9 @@ class Player:
         self.ammo = ammo
         self.max_ammo = 3
         self.facing = (0, -1)  # Default facing up
+        self.shooting = False
+        self.shoot_time = 0
     def move(self, dx, dy, maze, now):
-        # Always update facing direction if a direction is pressed
         if dx or dy:
             self.facing = (dx, dy)
         if now - self.last_move_time < 150:
@@ -115,6 +126,12 @@ class Player:
         if maze[ny][nx] == 0:
             self.x, self.y = nx, ny
             self.last_move_time = now
+    def start_shooting(self, now):
+        self.shooting = True
+        self.shoot_time = now
+    def update_shooting(self, now):
+        if self.shooting and now - self.shoot_time > 150:
+            self.shooting = False
     def pickup_ammo(self):
         if self.ammo < self.max_ammo:
             self.ammo += 1
@@ -181,32 +198,9 @@ def draw_maze(screen, maze):
             color = WALL_COLOR if cell == 1 else PATH_COLOR
             pygame.draw.rect(screen, color, (x*CELL_SIZE, y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
-def draw_player(screen, x, y, facing):
-    cx = x * CELL_SIZE + CELL_SIZE // 2
-    cy = y * CELL_SIZE + CELL_SIZE // 2
-    radius = CELL_SIZE // 2 - 2
-    # Face
-    pygame.draw.circle(screen, PLAYER_COLOR, (cx, cy), radius)
-    # Eyes
-    eye_radius = 3
-    eye_offset_x = 6
-    eye_offset_y = -4
-    pygame.draw.circle(screen, (0,0,0), (cx - eye_offset_x, cy + eye_offset_y), eye_radius)
-    pygame.draw.circle(screen, (0,0,0), (cx + eye_offset_x, cy + eye_offset_y), eye_radius)
-    # Smile
-    smile_rect = pygame.Rect(cx - 7, cy + 2, 14, 7)
-    pygame.draw.arc(screen, (0,0,0), smile_rect, 3.7, 5.8, 2)
-    # Gun
-    gun_length = 16
-    gun_width = 5
-    dx, dy = facing
-    if dx != 0 or dy != 0:
-        # Normalize direction
-        mag = (dx**2 + dy**2) ** 0.5
-        ndx, ndy = dx / mag, dy / mag
-        gun_start = (int(cx + ndx * (radius - 2)), int(cy + ndy * (radius - 2)))
-        gun_end = (int(cx + ndx * (radius + gun_length)), int(cy + ndy * (radius + gun_length)))
-        pygame.draw.line(screen, (80, 80, 80), gun_start, gun_end, gun_width)
+def draw_player(screen, x, y, facing, shooting):
+    sprite = PLAYER_SPRITE_2 if shooting else PLAYER_SPRITE_1
+    screen.blit(sprite, (x * CELL_SIZE, y * CELL_SIZE))
 
 def draw_ammo(screen, ammo, max_ammo):
     for i in range(max_ammo):
@@ -233,40 +227,19 @@ def draw_super_ammo_pickup(screen, x, y):
     pygame.draw.circle(screen, (0, 255, 255), (cx, cy), CELL_SIZE//3)
     pygame.draw.circle(screen, (0, 200, 200), (cx, cy), CELL_SIZE//5)
 
-def draw_bullet(screen, x, y, super_bullet=False):
+def draw_bullet(screen, x, y, super_bullet=False, dx=0, dy=0):
     cx = x * CELL_SIZE + CELL_SIZE // 2
     cy = y * CELL_SIZE + CELL_SIZE // 2
     if super_bullet:
-        pygame.draw.circle(screen, (0, 255, 255), (cx, cy), 12)
+        pygame.draw.ellipse(screen, (255, 200, 0), (cx-12, cy-12, 24, 24))
+        pygame.draw.ellipse(screen, (255, 80, 0), (cx-8, cy-8, 16, 16))
     else:
-        pygame.draw.circle(screen, (255, 200, 0), (cx, cy), 6)
+        # Draw a fire-like oval (yellow/red)
+        pygame.draw.ellipse(screen, (255, 220, 40), (cx-8, cy-4, 16, 8))
+        pygame.draw.ellipse(screen, (255, 100, 0), (cx-6, cy-3, 12, 6))
 
 def draw_enemy(screen, x, y, facing):
-    cx = x * CELL_SIZE + CELL_SIZE // 2
-    cy = y * CELL_SIZE + CELL_SIZE // 2
-    radius = CELL_SIZE // 2 - 2
-    # Face
-    pygame.draw.circle(screen, ENEMY_COLOR, (cx, cy), radius)
-    # Angry Eyes
-    eye_radius = 3
-    eye_offset_x = 6
-    eye_offset_y = -4
-    pygame.draw.circle(screen, (0,0,0), (cx - eye_offset_x, cy + eye_offset_y), eye_radius)
-    pygame.draw.circle(screen, (0,0,0), (cx + eye_offset_x, cy + eye_offset_y), eye_radius)
-    # Angry Brows
-    pygame.draw.line(screen, (0,0,0), (cx - eye_offset_x - 2, cy + eye_offset_y - 4), (cx - eye_offset_x + 4, cy + eye_offset_y - 2), 2)
-    pygame.draw.line(screen, (0,0,0), (cx + eye_offset_x - 4, cy + eye_offset_y - 2), (cx + eye_offset_x + 2, cy + eye_offset_y - 4), 2)
-    # Frown
-    frown_rect = pygame.Rect(cx - 7, cy + 8, 14, 7)
-    pygame.draw.arc(screen, (0,0,0), frown_rect, 3.7+3.14, 5.8+3.14, 2)
-    # Diagonal Knife (hand under head)
-    # Knife starts bottom left or right, ends further out diagonally
-    hand_offset = (int(cx - radius//2), int(cy + radius//2))
-    knife_tip = (int(cx - radius - 8), int(cy + radius + 8))
-    pygame.draw.line(screen, (200, 200, 255), hand_offset, knife_tip, 4)
-    pygame.draw.circle(screen, (255,255,255), knife_tip, 3)
-    # Hand
-    pygame.draw.circle(screen, (255, 200, 200), hand_offset, 4)
+    screen.blit(ENEMY_SPRITE, (x * CELL_SIZE, y * CELL_SIZE))
 
 def main():
     pygame.init()
@@ -276,40 +249,30 @@ def main():
     level = 1
     running = True
     while running:
-        width = min(MAZE_WIDTH + level//2, 31) | 1
-        height = min(MAZE_HEIGHT + level//2, 31) | 1
-        # Ensure a valid path exists between start and finish
-        while True:
-            maze = generate_maze(width, height)
-            result = find_longest_path(maze)
-            (start, finish), path = result
-            if start is not None and finish is not None and None not in start and None not in finish and len(path) > 2:
-                break
-        player_x, player_y = start
-        exit_x, exit_y = finish
-        enemy_positions = set()
-        path_for_enemies = path[1:-1] if len(path) > 2 else []
-        num_enemies = min(1 + level//2, max(1, len(path_for_enemies)//5))
-        if path_for_enemies:
-            chosen = random.sample(path_for_enemies, min(num_enemies, len(path_for_enemies)))
-            enemy_positions = set(chosen)
-        # Carry over ammo between levels
-        if 'player' in locals():
-            player = Player(player_x, player_y, ammo=player.ammo)
-        else:
-            player = Player(player_x, player_y)
-        enemies = [Enemy(x, y) for x, y in enemy_positions]
-        # Place ammo pickups (not at start, finish, or enemy)
-        ammo_pickups = set()
-        for _ in range(random.randint(1, 3)):
+        width = MAZE_WIDTH
+        height = MAZE_HEIGHT
+        maze = generate_maze(width, height)
+        # Place player at a random empty cell
+        player_x, player_y = random_empty_cell(maze)
+        player = Player(player_x, player_y, ammo=player.ammo if 'player' in locals() else 1)
+        # Place initial enemies
+        enemies = []
+        for _ in range(5):
+            ex, ey = random_empty_cell(maze)
+            while (ex, ey) == (player.x, player.y):
+                ex, ey = random_empty_cell(maze)
+            enemies.append(Enemy(ex, ey))
+        # Place initial ammo pickups
+        ammo_pickups = []
+        for _ in range(5):
             ax, ay = random_empty_cell(maze)
-            while (ax, ay) in enemy_positions or (ax, ay) == (player.x, player.y) or (ax, ay) == (exit_x, exit_y):
+            while (ax, ay) == (player.x, player.y) or any((ax, ay) == (e.x, e.y) for e in enemies):
                 ax, ay = random_empty_cell(maze)
-            ammo_pickups.add((ax, ay))
-        ammo_pickups = [AmmoPickup(x, y) for x, y in ammo_pickups]
+            ammo_pickups.append(AmmoPickup(ax, ay))
         bullets = []
         can_shoot = True
         can_super = True
+        score = 0
         level_running = True
         while level_running:
             now = pygame.time.get_ticks()
@@ -324,6 +287,7 @@ def main():
                             bullets.append(Bullet(player.x, player.y, dx, dy))
                             player.ammo -= 1
                         can_shoot = False
+                        player.start_shooting(now)
                     if event.key == pygame.K_z and can_super:
                         dx, dy = player.facing
                         if dx != 0 or dy != 0:
@@ -358,33 +322,46 @@ def main():
                     for enemy in enemies[:]:
                         if (enemy.x, enemy.y) == (bullet.x, bullet.y):
                             enemies.remove(enemy)
+                            score += 1
+                            # Respawn enemy at random location
+                            ex, ey = random_empty_cell(maze)
+                            while (ex, ey) == (player.x, player.y):
+                                ex, ey = random_empty_cell(maze)
+                            enemies.append(Enemy(ex, ey))
                             if not bullet.super_bullet:
                                 bullet.active = False
                     # Super bullet destroys walls (handled in move)
                 if not bullet.active:
                     bullets.remove(bullet)
+            # Respawn ammo if less than 5 on field
+            while len(ammo_pickups) < 5:
+                ax, ay = random_empty_cell(maze)
+                while (ax, ay) == (player.x, player.y) or any((ax, ay) == (e.x, e.y) for e in enemies):
+                    ax, ay = random_empty_cell(maze)
+                ammo_pickups.append(AmmoPickup(ax, ay))
             # Check collisions
             for enemy in enemies:
                 if (enemy.x, enemy.y) == (player.x, player.y):
                     running = False
                     level_running = False
-            if (player.x, player.y) == (exit_x, exit_y):
-                level += 1
-                level_running = False
             # Draw
             screen.fill(BG_COLOR)
             draw_maze(screen, maze)
             for ammo in ammo_pickups:
                 draw_ammo_pickup(screen, ammo.x, ammo.y)
-            draw_player(screen, player.x, player.y, player.facing)
+            draw_player(screen, player.x, player.y, player.facing, player.shooting)
             for bullet in bullets:
-                draw_bullet(screen, bullet.x, bullet.y, bullet.super_bullet)
+                draw_bullet(screen, bullet.x, bullet.y, bullet.super_bullet, bullet.dx, bullet.dy)
             for enemy in enemies:
                 draw_enemy(screen, enemy.x, enemy.y, (0, -1))
-            pygame.draw.rect(screen, (50, 50, 200), (exit_x*CELL_SIZE, exit_y*CELL_SIZE, CELL_SIZE, CELL_SIZE))
+            # Draw score
+            font = pygame.font.SysFont(None, 32)
+            score_text = font.render(f'Score: {score}', True, (255,255,255))
+            screen.blit(score_text, (10, SCREEN_HEIGHT-40))
             draw_ammo(screen, player.ammo, player.max_ammo)
             pygame.display.flip()
             clock.tick(FPS)
+            player.update_shooting(now)
     # Game over with Try Again button
     font = pygame.font.SysFont(None, 72)
     text = font.render(f'Game Over! Level: {level}', True, (255, 0, 0))
